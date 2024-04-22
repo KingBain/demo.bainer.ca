@@ -1,0 +1,52 @@
+name: Read JWT on Pull Request to Main
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  decode-jwt:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9' # You can specify any version of Python here.
+
+      # If you need to install any Python dependencies, you can do so here.
+      # For instance, if you need 'pyjwt' for JWT operations, uncomment the following lines:
+      # - name: Install dependencies
+      #   run: pip install pyjwt
+      
+      - name: Read JWT content
+        run: |
+          import os
+          
+          # Path to the JWT file within the repository
+          jwt_file_path = 'web/.well-known/ato/ato.jwt'
+          
+          def read_jwt(file_path):
+              """Reads the JWT file and returns its content."""
+              try:
+                  with open(file_path, 'r') as file:
+                      return file.read()
+              except FileNotFoundError:
+                  print("The file was not found.")
+                  return None
+              except Exception as e:
+                  print(f"An error occurred: {e}")
+                  return None
+          
+          jwt_content = read_jwt(jwt_file_path)
+          if jwt_content is not None:
+              print("JWT has been read and stored in a variable.")
+              # Add further processing here if needed
+          else:
+              print("Failed to read JWT.")
+          
+        shell: python # This specifies that the run command should use the Python interpreter
