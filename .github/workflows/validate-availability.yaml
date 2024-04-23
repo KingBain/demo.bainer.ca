@@ -16,47 +16,43 @@ jobs:
       - name: Install jq
         run: sudo apt-get install jq
 
-      - name: Validate JWT and Check Availability
+      - name: Decode JWT and Check Availability
         env:
           AUTHORIZATION: ${{ secrets.AUTHORIZATION }}
           CHECKLY_ACCOUNT: ${{ secrets.CHECKLY_ACCOUNT }}
-          CHECKID : ${{ secrets.CHECKID}}
+          CHECKID: ${{ secrets.CHECKID }}
         run: |
-          # Decode JWT and extract the availability
+          echo "Starting JWT decode and availability check..."
+
+          # Reading JWT from file
           JWT_CONTENT=$(cat web/.well-known/ato/ato.jwt)
           JWT_PAYLOAD=$(echo $JWT_CONTENT | cut -d "." -f 2)
 
-          # Add padding to JWT_PAYLOAD for base64 decoding
+          # Normalizing Base64 and Decoding
           REM=$((${#JWT_PAYLOAD} % 4))
           if [ $REM -eq 2 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}=="
           elif [ $REM -eq 3 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}="
           fi
-
-          # Translate base64url to base64
           JWT_PAYLOAD=$(echo $JWT_PAYLOAD | tr '_-' '/+')
-
-          # Output the padded and translated JWT payload
-          echo "Padded and Translated JWT Payload: $JWT_PAYLOAD"
-
-          # Decode Base64
           JWT_PAYLOAD_DECODED=$(echo $JWT_PAYLOAD | base64 -d)
-          echo "Decoded JWT Payload: $JWT_PAYLOAD_DECODED"
 
+          # Extracting availability from JWT
           JWT_AVAILABILITY=$(echo $JWT_PAYLOAD_DECODED | jq -r '.availability')
+          echo "JWT Availability is set at ${JWT_AVAILABILITY}%."
 
-          # Call the API
+          # Fetching availability from Checkly API
+          API_URL="https://api.checklyhq.com/v1/analytics/browser-checks/$CHECKID?metrics=availability&limit=10&page=1&quickRange=last30Days"
           API_RESPONSE=$(curl -s \
                           --header "Authorization: Bearer $AUTHORIZATION" \
                           --header "x-checkly-account: $CHECKLY_ACCOUNT" \
-                          "https://api.checklyhq.com/v1/analytics/browser-checks/$CHECKID?metrics=availability&limit=10&page=1&quickRange=last30Days")
-                          
-          # Parse the API response and extract the availability
+                          "$API_URL")
           API_AVAILABILITY=$(echo $API_RESPONSE | jq -r '.series[0].data[0].availability')
+          echo "Checkly API reports current availability at ${API_AVAILABILITY}%."
 
-          # Compare the values and output a warning if needed
+          # Comparing JWT specified availability with API reported availability
           if (( $(echo "$API_AVAILABILITY < $JWT_AVAILABILITY" | bc -l) )); then
-              echo "::warning:: The API availability ${API_AVAILABILITY}% is below the JWT specified ATO standard of ${JWT_AVAILABILITY}%."
+              echo "::warning::The API availability of ${API_AVAILABILITY}% is below the JWT specified ATO standard of ${JWT_AVAILABILITY}%."
           else
-              echo "The API availability ${API_AVAILABILITY}% meets or exceeds the JWT specified ATO standard of ${JWT_AVAILABILITY}%."
+              echo "The API availability of ${API_AVAILABILITY}% meets or exceeds the ATO standard of ${JWT_AVAILABILITY}%."
           fi
         shell: bash
