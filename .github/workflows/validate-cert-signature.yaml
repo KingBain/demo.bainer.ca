@@ -1,1 +1,54 @@
-.
+name: Verify Domain HTTPS Configuration
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify-https:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      
+      - name: Install jq
+        run: sudo apt-get install jq
+
+      - name: Check Domain for HTTPS Requirement and Verify Connection
+        run: |
+          echo "Starting domain HTTPS check..."
+
+          # Reading JWT from file
+          JWT_CONTENT=$(cat web/.well-known/ato/ato.jwt)
+          JWT_PAYLOAD=$(echo $JWT_CONTENT | cut -d "." -f 2)
+
+          # Normalizing Base64 and Decoding
+          REM=$((${#JWT_PAYLOAD} % 4))
+          if [ $REM -eq 2 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}=="
+          elif [ $REM -eq 3 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}="
+          fi
+          JWT_PAYLOAD=$(echo $JWT_PAYLOAD | tr '_-' '/+')
+          JWT_PAYLOAD_DECODED=$(echo $JWT_PAYLOAD | base64 -d)
+
+          # Extracting 'mustbeHTTPS' and 'domain' from JWT
+          MUST_BE_HTTPS=$(echo $JWT_PAYLOAD_DECODED | jq -r '.mustbeHTTPS')
+          DOMAIN=$(echo $JWT_PAYLOAD_DECODED | jq -r '.domain')
+
+          echo "Domain to check: $DOMAIN"
+          echo "Must be HTTPS: $MUST_BE_HTTPS"
+
+          # Checking if HTTPS is required and verifying the domain's HTTPS connection
+          if [ "$MUST_BE_HTTPS" = "true" ]; then
+            echo "Testing HTTPS connection for $DOMAIN..."
+            if ! curl --fail --silent --output /dev/null --head --location "https://$DOMAIN"; then
+              echo "::error ::Failed to establish a valid HTTPS connection to $DOMAIN."
+              exit 1
+            else
+              echo "HTTPS connection successfully verified for $DOMAIN."
+            fi
+          else
+            echo "HTTPS is not required for $DOMAIN according to JWT."
+          fi
+        shell: bash
