@@ -20,7 +20,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install pyjwt[crypto] requests
+          pip install pyjwt[crypto] cryptography requests
 
       - name: Verify JWT Signature
         run: |
