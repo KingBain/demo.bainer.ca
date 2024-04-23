@@ -12,69 +12,34 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
+      
+      - name: Install jq
+        run: sudo apt-get install jq
 
       - name: Validate JWT and Check Availability
         env:
           AUTHORIZATION: ${{ secrets.AUTHORIZATION }}
           CHECKLY_ACCOUNT: ${{ secrets.CHECKLY_ACCOUNT }}
         run: |
-          import os
-          import base64
-          import json
-          import requests
+          # Decode JWT and extract the availability
+          JWT_CONTENT=$(cat web/.well-known/ato/ato.jwt)
+          JWT_PAYLOAD=$(echo $JWT_CONTENT | cut -d "." -f 2)
+          JWT_PAYLOAD_DECODED=$(echo $JWT_PAYLOAD | base64 --decode)
+          JWT_AVAILABILITY=$(echo $JWT_PAYLOAD_DECODED | jq -r '.availability')
 
-          def decode_base64(data):
-              """Decode base64, padding being optional."""
-              missing_padding = len(data) % 4
-              if missing_padding:
-                  data += '=' * (4 - missing_padding)
-              return base64.urlsafe_b64decode(data)
+          # Call the API
+          API_RESPONSE=$(curl -s \
+                          --header "Authorization: Bearer $AUTHORIZATION" \
+                          --header "x-checkly-account: $CHECKLY_ACCOUNT" \
+                          "https://api.checklyhq.com/v1/analytics/browser-checks/876516d6-55d2-4248-8941-8d841f7d19f1?metrics=availability&limit=10&page=1&quickRange=last30Days")
+                          
+          # Parse the API response and extract the availability
+          API_AVAILABILITY=$(echo $API_RESPONSE | jq -r '.series[0].data[0].availability')
 
-          def extract_jwt_parts(jwt):
-              header, payload, _ = jwt.split('.')
-              header_decoded = json.loads(decode_base64(header))
-              payload_decoded = json.loads(decode_base64(payload))
-              return header_decoded, payload_decoded
-
-          # Path to the JWT file within the repository
-          jwt_file_path = 'web/.well-known/ato/ato.jwt'
-          try:
-              with open(jwt_file_path, 'r') as file:
-                  jwt_token = file.read().strip()
-                  _, payload = extract_jwt_parts(jwt_token)
-                  jwt_availability = float(payload.get('availability', 0))
-
-                  api_url = 'https://api.checklyhq.com/v1/analytics/browser-checks/876516d6-55d2-4248-8941-8d841f7d19f1'
-                  headers = {
-                      'Authorization': f'Bearer {os.environ["AUTHORIZATION"]}',
-                      'x-checkly-account': os.environ["CHECKLY_ACCOUNT"]
-                  }
-                  params = {
-                      'metrics': 'availability',
-                      'limit': 10,
-                      'page': 1,
-                      'quickRange': 'last30Days'
-                  }
-                  response = requests.get(api_url, headers=headers, params=params)
-                  response.raise_for_status()
-                  api_result = response.json()
-                  api_availability = api_result['series'][0]['data'][0]['availability']
-
-                  if api_availability < jwt_availability:
-                      print(f"::warning:: The API availability {api_availability}% is below the JWT specified ATO standard of {jwt_availability}%.")
-                  else:
-                      print(f"The API availability {api_availability}% meets or exceeds the JWT specified ATO standard of {jwt_availability}%.")
-
-          except FileNotFoundError:
-              print("The JWT file was not found.")
-          except requests.exceptions.RequestException as e:
-              print(f"Failed to fetch data from API: {e}")
-          except Exception as e:
-              print(f"An error occurred: {e}")
-
-        shell: python
+          # Compare the values and output a warning if needed
+          if (( $(echo "$API_AVAILABILITY < $JWT_AVAILABILITY" | bc -l) )); then
+              echo "::warning:: The API availability ${API_AVAILABILITY}% is below the JWT specified ATO standard of ${JWT_AVAILABILITY}%."
+          else
+              echo "The API availability ${API_AVAILABILITY}% meets or exceeds the JWT specified ATO standard of ${JWT_AVAILABILITY}%."
+          fi
+        shell: bash
