@@ -21,21 +21,25 @@ jobs:
           AUTHORIZATION: ${{ secrets.AUTHORIZATION }}
           CHECKLY_ACCOUNT: ${{ secrets.CHECKLY_ACCOUNT }}
         run: |
-          # Decode JWT and extract the availability
+          # Read the JWT file
           JWT_CONTENT=$(cat web/.well-known/ato/ato.jwt)
+
+          # Extract and Base64-decode the payload
           JWT_PAYLOAD=$(echo $JWT_CONTENT | cut -d "." -f 2)
-          # Fix padding for base64 URL-encoded strings
-          JWT_PAYLOAD_FIXED=$(echo $JWT_PAYLOAD | tr '_-' '/+' | sed 's/.\{1\}$/&=/' | sed 's/.\{1\}$/&=/' | sed 's/.\{1\}$/&=/' )
-          JWT_PAYLOAD_DECODED=$(echo $JWT_PAYLOAD_FIXED | base64 -d)
+          # Add necessary padding
+          JWT_PAYLOAD_PADDED=$(echo "$JWT_PAYLOAD" | sed 's~\(.*\)=*~\1~; s~^~000~; s~\(.*\)\(....\)~\2~')
+          # Decode from Base64 URL
+          JWT_PAYLOAD_DECODED=$(echo "$JWT_PAYLOAD_PADDED" | tr '_-' '/+' | base64 -d)
+
+          # Extract the availability from the JWT payload
           JWT_AVAILABILITY=$(echo $JWT_PAYLOAD_DECODED | jq -r '.availability')
 
-          # Call the API
+          # Call the API and parse the response
           API_RESPONSE=$(curl -s \
                           --header "Authorization: Bearer $AUTHORIZATION" \
                           --header "x-checkly-account: $CHECKLY_ACCOUNT" \
                           "https://api.checklyhq.com/v1/analytics/browser-checks/876516d6-55d2-4248-8941-8d841f7d19f1?metrics=availability&limit=10&page=1&quickRange=last30Days")
                           
-          # Parse the API response and extract the availability
           API_AVAILABILITY=$(echo $API_RESPONSE | jq -r '.series[0].data[0].availability')
 
           # Compare the values and output a warning if needed
