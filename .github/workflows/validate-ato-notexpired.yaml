@@ -1,0 +1,49 @@
+name: Check ATO Expiration
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-expiration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      
+      - name: Install jq
+        run: sudo apt-get install jq
+
+      - name: Decode JWT and Check Expiration
+        run: |
+          echo "Starting JWT expiration check..."
+
+          # Reading JWT from file
+          JWT_CONTENT=$(cat web/.well-known/ato/ato.jwt)
+          JWT_PAYLOAD=$(echo $JWT_CONTENT | cut -d "." -f 2)
+
+          # Normalizing Base64 and Decoding
+          REM=$((${#JWT_PAYLOAD} % 4))
+          if [ $REM -eq 2 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}=="
+          elif [ $REM -eq 3 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}="
+          fi
+          JWT_PAYLOAD=$(echo $JWT_PAYLOAD | tr '_-' '/+')
+          JWT_PAYLOAD_DECODED=$(echo $JWT_PAYLOAD | base64 -d)
+
+          # Extracting 'expirationDate' from JWT
+          EXPIRATION_DATE=$(echo $JWT_PAYLOAD_DECODED | jq -r '.expirationDate')
+          echo "JWT Expiration Date: $EXPIRATION_DATE"
+
+          # Comparing the expiration date to today's date
+          TODAY=$(date +%Y-%m-%d)
+          echo "Today's Date: $TODAY"
+          
+          if [[ "$EXPIRATION_DATE" < "$TODAY" ]]; then
+              echo "::error ::JWT has expired. Expiration date was $EXPIRATION_DATE, which is before today's date $TODAY."
+              exit 1
+          else
+              echo "JWT is still valid."
+          fi 
+        shell: bash
