@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  decode-jwt:
+  validate-availability:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,17 +18,21 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Extract JWT Header and Payload
+      - name: Validate JWT and Check Availability
+        env:
+          AUTHORIZATION: ${{ secrets.AUTHORIZATION }}
+          CHECKLY_ACCOUNT: ${{ secrets.CHECKLY_ACCOUNT }}
         run: |
           import os
           import base64
           import json
+          import requests
 
           def decode_base64(data):
               """Decode base64, padding being optional."""
               missing_padding = len(data) % 4
               if missing_padding:
-                  data += '='* (4 - missing_padding)
+                  data += '=' * (4 - missing_padding)
               return base64.urlsafe_b64decode(data)
 
           def extract_jwt_parts(jwt):
@@ -42,14 +46,34 @@ jobs:
           try:
               with open(jwt_file_path, 'r') as file:
                   jwt_token = file.read().strip()
-                  header, payload = extract_jwt_parts(jwt_token)
-                  print("JWT Header:", json.dumps(header, indent=2))
-                  print("JWT Payload:", json.dumps(payload, indent=2))
-                  # If you need to use the header and payload in further steps, 
-                  # you could set them as environment variables or output them
-                  # to use them in subsequent steps
+                  _, payload = extract_jwt_parts(jwt_token)
+                  jwt_availability = float(payload.get('availability', 0))
+
+                  api_url = 'https://api.checklyhq.com/v1/analytics/browser-checks/876516d6-55d2-4248-8941-8d841f7d19f1'
+                  headers = {
+                      'Authorization': f'Bearer {os.environ["AUTHORIZATION"]}',
+                      'x-checkly-account': os.environ["CHECKLY_ACCOUNT"]
+                  }
+                  params = {
+                      'metrics': 'availability',
+                      'limit': 10,
+                      'page': 1,
+                      'quickRange': 'last30Days'
+                  }
+                  response = requests.get(api_url, headers=headers, params=params)
+                  response.raise_for_status()
+                  api_result = response.json()
+                  api_availability = api_result['series'][0]['data'][0]['availability']
+
+                  if api_availability < jwt_availability:
+                      print(f"::warning:: The API availability {api_availability}% is below the JWT specified ATO standard of {jwt_availability}%.")
+                  else:
+                      print(f"The API availability {api_availability}% meets or exceeds the JWT specified ATO standard of {jwt_availability}%.")
+
           except FileNotFoundError:
-              print("The file was not found.")
+              print("The JWT file was not found.")
+          except requests.exceptions.RequestException as e:
+              print(f"Failed to fetch data from API: {e}")
           except Exception as e:
               print(f"An error occurred: {e}")
 
