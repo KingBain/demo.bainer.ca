@@ -24,12 +24,23 @@ jobs:
           # Decode JWT and extract the availability
           JWT_CONTENT=$(cat web/.well-known/ato/ato.jwt)
           JWT_PAYLOAD=$(echo $JWT_CONTENT | cut -d "." -f 2)
-          # Output the encoded JWT payload
-          echo "Encoded JWT Payload: $JWT_PAYLOAD"
 
-          # Add padding if necessary
-          JWT_PAYLOAD_PADDED=$(echo $JWT_PAYLOAD | sed 's~\(.\{4\}\)*$~&==~')
-          JWT_PAYLOAD_DECODED=$(echo $JWT_PAYLOAD_PADDED | base64 --decode)
+          # Add padding to JWT_PAYLOAD for base64 decoding
+          REM=$((${#JWT_PAYLOAD} % 4))
+          if [ $REM -eq 2 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}=="
+          elif [ $REM -eq 3 ]; then JWT_PAYLOAD="${JWT_PAYLOAD}="
+          fi
+
+          # Translate base64url to base64
+          JWT_PAYLOAD=$(echo $JWT_PAYLOAD | tr '_-' '/+')
+
+          # Output the padded and translated JWT payload
+          echo "Padded and Translated JWT Payload: $JWT_PAYLOAD"
+
+          # Decode Base64
+          JWT_PAYLOAD_DECODED=$(echo $JWT_PAYLOAD | base64 -d)
+          echo "Decoded JWT Payload: $JWT_PAYLOAD_DECODED"
+
           JWT_AVAILABILITY=$(echo $JWT_PAYLOAD_DECODED | jq -r '.availability')
 
           # Call the API
@@ -39,4 +50,12 @@ jobs:
                           "https://api.checklyhq.com/v1/analytics/browser-checks/876516d6-55d2-4248-8941-8d841f7d19f1?metrics=availability&limit=10&page=1&quickRange=last30Days")
                           
           # Parse the API response and extract the availability
-          API_AVAILABILITY=$(echo $API_RES
+          API_AVAILABILITY=$(echo $API_RESPONSE | jq -r '.series[0].data[0].availability')
+
+          # Compare the values and output a warning if needed
+          if (( $(echo "$API_AVAILABILITY < $JWT_AVAILABILITY" | bc -l) )); then
+              echo "::warning:: The API availability ${API_AVAILABILITY}% is below the JWT specified ATO standard of ${JWT_AVAILABILITY}%."
+          else
+              echo "The API availability ${API_AVAILABILITY}% meets or exceeds the JWT specified ATO standard of ${JWT_AVAILABILITY}%."
+          fi
+        shell: bash
