@@ -1,4 +1,4 @@
-name: Read JWT on Pull Request to Main
+name: Validate Uptime Service Level
 
 on:
   pull_request:
