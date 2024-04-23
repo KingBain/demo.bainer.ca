@@ -24,8 +24,7 @@ jobs:
 
       - name: Verify JWT Signature
         run: |
-          import jwt
-          import requests
+          python -c "import jwt; import requests; print('Imports are successful')"
 
           # Load JWT from file
           with open('web/.well-known/ato/ato.jwt', 'r') as file:
