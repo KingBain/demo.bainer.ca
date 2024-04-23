@@ -20,6 +20,7 @@ jobs:
         env:
           AUTHORIZATION: ${{ secrets.AUTHORIZATION }}
           CHECKLY_ACCOUNT: ${{ secrets.CHECKLY_ACCOUNT }}
+          CHECKID : ${{ secrets.CHECKID}}
         run: |
           # Decode JWT and extract the availability
           JWT_CONTENT=$(cat web/.well-known/ato/ato.jwt)
@@ -47,7 +48,7 @@ jobs:
           API_RESPONSE=$(curl -s \
                           --header "Authorization: Bearer $AUTHORIZATION" \
                           --header "x-checkly-account: $CHECKLY_ACCOUNT" \
-                          "https://api.checklyhq.com/v1/analytics/browser-checks/876516d6-55d2-4248-8941-8d841f7d19f1?metrics=availability&limit=10&page=1&quickRange=last30Days")
+                          "https://api.checklyhq.com/v1/analytics/browser-checks/$CHECKID?metrics=availability&limit=10&page=1&quickRange=last30Days")
                           
           # Parse the API response and extract the availability
           API_AVAILABILITY=$(echo $API_RESPONSE | jq -r '.series[0].data[0].availability')
