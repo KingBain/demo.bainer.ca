@@ -50,4 +50,5 @@ jobs:
             fi
           else
             echo "HTTPS is not required for $DOMAIN according to JWT."
+          fi
         shell: bash
