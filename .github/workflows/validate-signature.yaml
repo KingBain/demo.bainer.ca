@@ -1,0 +1,27 @@
+name: Validate JWT Signature
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify-signature:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Install Python dependencies
+        run: |
+          pip install pyjwt[crypto] cryptography requests
+
+      - name: Verify JWT Signature
+        run: |
+          python .github/workflows/scripts/verify_jwt.py
